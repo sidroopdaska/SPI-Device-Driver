@@ -22,7 +22,7 @@ long spimod_ioctl(struct file* file, unsigned int ioctl_num, unsigned long ioctl
    unsigned short tempUS1;
    unsigned int tempUI1, tempUI2;
 
-   printk(KERN_ALERT "spimod_ioctl()\n");
+   //printk(KERN_ALERT "spimod_ioctl()\n");
 
    if (down_interruptible(&device_state._fop_sem))
    {
@@ -33,7 +33,7 @@ long spimod_ioctl(struct file* file, unsigned int ioctl_num, unsigned long ioctl
    {
       case IOCTL_SEND_DATA:
 
-         printk(KERN_ALERT "IOCTL_SEND_DATA\n");
+         //printk(KERN_ALERT "IOCTL_SEND_DATA\n");
 
          data_params = (struct spi_ioc_transfer*)ioctl_param;
  
@@ -56,7 +56,7 @@ long spimod_ioctl(struct file* file, unsigned int ioctl_num, unsigned long ioctl
 
       case IOCTL_RECEIVE_DATA:
 
-         printk(KERN_ALERT "IOCTL_RECEIVE_DATA\n");
+         //printk(KERN_ALERT "IOCTL_RECEIVE_DATA\n");
 
          data_params = (struct spi_ioc_transfer*)ioctl_param;
 
@@ -72,15 +72,15 @@ long spimod_ioctl(struct file* file, unsigned int ioctl_num, unsigned long ioctl
 
       case IOCTL_GET_STATUS:
 
-         printk(KERN_ALERT "IOCTL_GET_STATUS\n");
+         //printk(KERN_ALERT "IOCTL_GET_STATUS\n");
 
          status_params = (struct spi_ioc_status*)ioctl_param;
 
          tempUI1 = circular_buffer_num_bytes_available(device_state._rxBuffer);
-         tempUI2 = (device_transaction._inPacket._status == SLAVE_RX_ABLE) ? 1: 0;
+         tempUI2 = (device_transaction._inPacket->_status == SLAVE_RX_ABLE) ? 1: 0;
 
-         get_user(status_params->_rxBytesAvailable, &tempUI1);
-         get_user(status_params->_clearToSend, &tempUI2);
+         put_user(tempUI1, &status_params->_rxBytesAvailable);
+         put_user(tempUI2, &status_params->_clearToSend);
 
          result = 0;
 
@@ -118,8 +118,6 @@ int spimod_open(struct inode* i, struct file* file)
 {
    int status = 0;
 
-   printk(KERN_ALERT "spimod_open()\n");
-
    if (down_interruptible(&device_state._fop_sem))
    {
       return -ERESTARTSYS;
@@ -142,8 +140,6 @@ int spimod_open(struct inode* i, struct file* file)
 int spimod_close(struct inode* i, struct file* file)
 {
    int status = 0;
-
-   printk(KERN_ALERT "spimod_close()\n");
 
    if (down_interruptible(&device_state._fop_sem))
    {

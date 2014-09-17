@@ -126,6 +126,8 @@ int add_spimod_device_to_bus(void)
 
 static void spimod_completion_handler(void* arg)
 {
+   //printk(KERN_ALERT "spimod_completion_handler()\n");
+
    device_transaction._busy = 0;
 }
 
@@ -139,8 +141,8 @@ int spimod_queue_spi_read_write(void)
    device_transaction._msg.complete = spimod_completion_handler;
    device_transaction._msg.context = NULL;
 
-   device_transaction._transfer.tx_buf = &device_transaction._outPacket;
-   device_transaction._transfer.rx_buf = &device_transaction._inPacket;
+   device_transaction._transfer.tx_buf = device_transaction._outPacket;
+   device_transaction._transfer.rx_buf = device_transaction._inPacket;
 
    device_transaction._transfer.len = PACKET_SIZE;
 
@@ -182,31 +184,34 @@ void spimod_create_outbound_packet(void)
       len = PACKET_DATA_SIZE;
    }
 
-   device_transaction._outPacket._sync = PACKET_SYNC;
-   device_transaction._outPacket._status = SLAVE_RX_UNABLE;
-   device_transaction._outPacket._len = len;
+   //printk(KERN_ALERT "Got %d bytes from tx buffer\n", len);
 
-   memset(device_transaction._outPacket._data, 0, PACKET_DATA_SIZE);
+   device_transaction._outPacket->_sync = PACKET_SYNC;
+   device_transaction._outPacket->_status = SLAVE_RX_UNABLE;
+   device_transaction._outPacket->_len = len;
+
+   memset(device_transaction._outPacket->_data, 0, PACKET_DATA_SIZE);
 
    circular_buffer_read(device_state._txBuffer,
-                        device_transaction._outPacket._data,
+                        device_transaction._outPacket->_data,
                         len);
 }
 
 void spimod_process_inbound_packet(void)
 {
-   if (device_transaction._inPacket._len > 0)
+   //printk (KERN_ALERT "Received %d bytes!\n", device_transaction._inPacket->_len);
+   if (device_transaction._inPacket->_len > 0)
    {
       int numWritten;
 
       numWritten = circular_buffer_write(device_state._rxBuffer,
-                                         device_transaction._inPacket._data,
-                                         device_transaction._inPacket._len);
+                                         device_transaction._inPacket->_data,
+                                         device_transaction._inPacket->_len);
 
-      if (numWritten != device_transaction._inPacket._len)
+      if (numWritten != device_transaction._inPacket->_len)
       {
          printk(KERN_ALERT "Rx buffer overflow - %d bytes\n",
-                device_transaction._inPacket._len);
+                device_transaction._inPacket->_len);
       }
    }
 }

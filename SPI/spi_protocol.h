@@ -26,8 +26,8 @@ struct spimod_transaction
 {
    struct spi_message		_msg;
    struct spi_transfer		_transfer;
-   struct packet		_outPacket;
-   struct packet		_inPacket;
+   struct packet*		_outPacket;
+   struct packet*		_inPacket;
    u32				_busy;
 };
 

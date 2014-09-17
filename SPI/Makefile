@@ -17,4 +17,4 @@ clean:
 
 # this just copies a file to LEC-3517 BOARD
 install:
-	# scp $(module_upload) root@192.168.186.90:/home/root
+	scp $(module_upload) root@192.168.186.90:/home/root

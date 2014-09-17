@@ -14,7 +14,7 @@
  *****************************/
 
 static const int TX_BUFFER_SIZE = 1024 * 16;
-static const int RX_BUFFER_SIZE = 1024 * 16;
+static const int RX_BUFFER_SIZE = 1024 * 64;
 
 /******************************
  * End of Constants           *
@@ -159,6 +159,14 @@ static int __init spimod_init(void)
    memset(&device_state, 0, sizeof(struct spimod_device_state));
    memset(&device_transaction, 0, sizeof(struct spimod_transaction));
 
+   device_transaction._outPacket = kmalloc(PACKET_SIZE, GFP_KERNEL | GFP_DMA);
+
+   memset(device_transaction._outPacket, 0, PACKET_SIZE);
+
+   device_transaction._inPacket = kmalloc(PACKET_SIZE, GFP_KERNEL | GFP_DMA);
+
+   memset(device_transaction._inPacket, 0, PACKET_SIZE);
+
    spin_lock_init(&device_state._spi_lock);
 
    sema_init(&device_state._fop_sem, 1);
@@ -232,6 +240,9 @@ static void __exit spimod_exit(void)
 
    circular_buffer_term(device_state._txBuffer);
    circular_buffer_term(device_state._rxBuffer);
+
+   kfree(device_transaction._outPacket);
+   kfree(device_transaction._inPacket);
 
    printk(KERN_ALERT "Module terminated\n");
 };
