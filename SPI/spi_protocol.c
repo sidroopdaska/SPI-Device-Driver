@@ -1,3 +1,14 @@
+/******************************************************************************
+ *
+ * Linux SPI Device Driver
+ * (c) 2014 Avalon Sciences Ltd
+ *
+ * Module Name: spi_protocol
+ *
+ * Purpose:     Module containing functions relating to SPI bus interactions.
+ *
+ * ***************************************************************************/
+
 #include "spi_protocol.h"
 #include "circular_buffer.h"
 
@@ -6,10 +17,38 @@
 
 #define __NO_VERSION_
 
+/* Externs, declared in spi_core.c */
+
 extern struct spimod_device_state device_state;
 extern struct spimod_transaction device_transaction;
 
-int spimod_probe(struct spi_device* spi_device)
+/* Externs, declared in spi_x.c */
+
+extern const int SPI_BUS;
+extern const char this_driver_name[];
+
+/******************************************************************************
+ *
+ * Function: spimod_probe()
+ * Purpose:  Probe callback function used to install the device in the driver
+ *           at driver initialisation.
+ *
+ * Parameters:
+ *
+ * - IN:     spi_device (the device to install).
+ * - OUT:    N/A
+ * - IN/OUT: N/A
+ *
+ * Returns:  Always 0.
+ *
+ * Globals:
+ *
+ * - device_state._spi_device (set to the supplied device).
+ *
+ * ***************************************************************************/
+
+int spimod_probe(
+   struct spi_device* spi_device)
 {
    unsigned long flags;
 
@@ -22,7 +61,27 @@ int spimod_probe(struct spi_device* spi_device)
    return 0;
 }
 
-int spimod_remove(struct spi_device* spi_device)
+/******************************************************************************
+ *
+ * Function: spimod_remove()
+ * Purpose:  Callback function for removal of the device at driver termination.
+ *
+ * Parameters:
+ *
+ * - IN:     spi_device (the current device) - not used.
+ * - OUT:    N/A
+ * - IN/OUT: N/A
+ *
+ * Returns:  Always 0.
+ *
+ * Globals:
+ *
+ * - device_state._spi_device (set to NULL).
+ *
+ * ***************************************************************************/
+
+int spimod_remove(
+   struct spi_device* spi_device)
 {
    unsigned long flags;
 
@@ -41,6 +100,25 @@ int spimod_remove(struct spi_device* spi_device)
 
    return 0;
 }
+
+/******************************************************************************
+ *
+ * Function: add_spimod_device_to_bus()
+ * Purpose:  Called at driver initialisation to find a free SPI device.
+ *
+ * Parameters:
+ *
+ * - IN:     N/A
+ * - OUT:    N/A
+ * - IN/OUT: N/A
+ *
+ * Returns:  0 on success, -1 on error.
+ *
+ * Globals:
+ *
+ * - N/A
+ *
+ * ***************************************************************************/
 
 int add_spimod_device_to_bus(void)
 {
@@ -124,12 +202,62 @@ int add_spimod_device_to_bus(void)
    return status;
 }
 
-static void spimod_completion_handler(void* arg)
+/******************************************************************************
+ *
+ * Function: spimod_completion_handler()
+ * Purpose:  Callback function for when the read / write transaction completes.
+ *
+ * Parameters:
+ *
+ * - IN:     N/A
+ * - OUT:    N/A
+ * - IN/OUT: arg (context - not used).
+ *
+ * Returns:  N/A
+ *
+ * Globals:
+ *
+ * - device_transaction._busy (set to 0).
+ *
+ * ***************************************************************************/
+
+static void spimod_completion_handler(
+   void* arg)
 {
    //printk(KERN_ALERT "spimod_completion_handler()\n");
 
    device_transaction._busy = 0;
 }
+
+/******************************************************************************
+ *
+ * Function: spimod_queue_spi_read_write()
+ * Purpose:  Performs the read / write transaction on the SPI device.
+ *
+ *           Should not be called if device_transaction._busy == 1.
+ *
+ *           Registers a completion handler callback for when the transaction
+ *           completes.
+ *
+ *           Note: device_state._spi_device must point at a valid SPI device.
+ *
+ * Parameters:
+ *
+ * - IN:     N/A
+ * - OUT:    N/A
+ * - IN/OUT: N/A
+ *
+ * Returns:  0 on success, negative integer on error.
+ *
+ * Globals:
+ *
+ * - device_transaction._msg (initialised for the read / write).
+ * - device_transaction._transfer (initialised for the read / write).
+ * - device_transaction._transfer.tx_buf (set to point at the out packet).
+ * - device_transaction._transfer.rx_buf (set to point at the in packet).
+ * - device_transaction._busy (set to 1 on success).
+ *
+ * ***************************************************************************/
 
 int spimod_queue_spi_read_write(void)
 {
@@ -173,6 +301,27 @@ int spimod_queue_spi_read_write(void)
    return status;
 }
 
+/******************************************************************************
+ *
+ * Function: spimod_create_outbound_packet()
+ * Purpose:  Initialises and populates the outbound packet with up to 
+ *           PACKET_DATA_SIZE bytes from the transmit circular buffer.
+ *
+ * Parameters:
+ *
+ * - IN:     N/A
+ * - OUT:    N/A
+ * - IN/OUT: N/A
+ *
+ * Returns:  N/A
+ *
+ * Globals:
+ *
+ * - device_state._txBuffer (used to populate the outgoing packet).
+ * - device_transaction._outPacket (initialised and populated with data).
+ *
+ * ***************************************************************************/
+
 void spimod_create_outbound_packet(void)
 {
    /* Read data from the tx buffer into our outbound packet */
@@ -197,10 +346,33 @@ void spimod_create_outbound_packet(void)
                         len);
 }
 
+/******************************************************************************
+ *
+ * Function: spimod_process_inbound_packet()
+ * Purpose:  Validates the received packet and adds its data (if any) into the
+ *           receive circular buffer.
+ *
+ * Parameters:
+ *
+ * - IN:     N/A
+ * - OUT:    N/A
+ * - IN/OUT: N/A
+ *
+ * Returns:  N/A
+ *
+ * Globals:
+ *
+ * - device_state._rxBuffer (expanded with data from the incoming packet).
+ * - device_transaction._inPacket (validated and data extracted).
+ *
+ * ***************************************************************************/
+
 void spimod_process_inbound_packet(void)
 {
    //printk (KERN_ALERT "Received %d bytes!\n", device_transaction._inPacket->_len);
-   if (device_transaction._inPacket->_len > 0)
+
+   if ((PACKET_SYNC == device_transaction._inPacket->_sync)
+    && (device_transaction._inPacket->_len <= PACKET_DATA_SIZE))
    {
       int numWritten;
 

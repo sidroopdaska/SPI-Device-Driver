@@ -1,3 +1,15 @@
+/******************************************************************************
+ *
+ * Linux SPI Device Driver
+ * (c) 2014 Avalon Sciences Ltd
+ *
+ * Module Name: spi_core
+ *
+ * Purpose:     Core functionality of the SPI device driver.  Handles module
+ *              initialisation and termination plus the read / write timer.
+ *
+ * ***************************************************************************/
+
 #include "spi4.h"
 #include "spi_protocol.h"
 #include "spi_fops.h"
@@ -9,23 +21,23 @@
 #include <linux/kernel.h>
 #include <linux/fs.h>
 
-/******************************
- * Constants                  *
- *****************************/
+/* Constants */
 
 static const int TX_BUFFER_SIZE = 1024 * 16;
 static const int RX_BUFFER_SIZE = 1024 * 64;
 
-/******************************
- * End of Constants           *
- *****************************/
-
-/******************************
- * Global Variables           *
- *****************************/
+/* Global variables, used here and in other modules */
 
 struct spimod_device_state device_state;
 struct spimod_transaction device_transaction;
+
+/* Externs, declared in spi_x.c */
+
+extern const int SPI_BUS;
+extern const char this_driver_name[];
+extern const int makedev_id;
+
+/* Instance of the driver handler */
 
 static struct spi_driver spimod_driver = {
    .driver = {
@@ -37,6 +49,8 @@ static struct spi_driver spimod_driver = {
    .remove	= __devexit_p(spimod_remove),
 };
 
+/* The file operations this driver is handling */
+
 static const struct file_operations spimod_fops = {
    .owner		= THIS_MODULE,
    .read		= spimod_read,
@@ -46,9 +60,29 @@ static const struct file_operations spimod_fops = {
    .release		= spimod_close,
 };
 
-/******************************
- * End of Global Variables    *
- *****************************/
+/******************************************************************************
+ *
+ * Function: spimod_timer_callback()
+ * Purpose:  Timer callback that performs the read / write transaction on the
+ *           SPI device.  It will not perform a read / write transaction if
+ *           the previous one is still in progress.
+ *
+ * Parameters:
+ *
+ * - IN:     N/A
+ * - OUT:    N/A
+ * - IN/OUT: timer (timer context - not used).
+ *
+ * Returns:  Always HRTIMER_RESTART (to restart the timer).
+ *
+ * Globals:
+ *
+ * - device_state._timer_running (sanity check).
+ * - device_transaction._busy (checks to see if a read / write transaction is
+ *   already in progress).
+ * - device_state._timer (the timer to use).
+ *
+ * ***************************************************************************/
 
 static enum hrtimer_restart spimod_timer_callback(struct hrtimer* timer)
 {
@@ -61,11 +95,31 @@ static enum hrtimer_restart spimod_timer_callback(struct hrtimer* timer)
       spimod_process_inbound_packet();
    }
 
-   hrtimer_forward_now(&device_state._timer,
-                       ktime_set(device_state._timer_period_s, device_state._timer_period_ns));
+   hrtimer_forward_now(
+      &device_state._timer,
+      ktime_set(device_state._timer_period_s, device_state._timer_period_ns));
 
    return HRTIMER_RESTART;
 };
+
+/******************************************************************************
+ *
+ * Function: spimod_init_spi()
+ * Purpose:  Registers the SPI driver and adds it to the relevant bus.
+ *
+ * Parameters:
+ *
+ * - IN:     N/A
+ * - OUT:    N/A
+ * - IN/OUT: N/A
+ *
+ * Returns:  0 on success, -1 on failure.
+ *
+ * Globals:
+ *
+ * - spimod_driver (the global driver structure).
+ *
+ * ***************************************************************************/
 
 static int __init spimod_init_spi(void)
 {
@@ -92,11 +146,33 @@ static int __init spimod_init_spi(void)
    return 0;
 };
 
+/******************************************************************************
+ *
+ * Function: spimod_init_cdev()
+ * Purpose:  Initialises the character device and registers its declared
+ *           file operations.
+ *
+ * Parameters:
+ *
+ * - IN:     N/A
+ * - OUT:    N/A
+ * - IN/OUT: N/A
+ *
+ * Returns:  0 on success, -1 on failure.
+ *
+ * Globals:
+ *
+ * - device_state._devt (updated with the device handle).
+ * - device_state._cdev (update with the character device handle).
+ * - spimod_fops (the declared list of file operations).
+ *
+ * ***************************************************************************/
+
 static int __init spimod_init_cdev(void)
 {
    int error;
 
-   device_state._devt = MKDEV(247, 0);
+   device_state._devt = MKDEV(247, makedev_id);
 
    error = register_chrdev_region(device_state._devt, 1, this_driver_name);
 
@@ -125,6 +201,26 @@ static int __init spimod_init_cdev(void)
    return 0;
 };
 
+/******************************************************************************
+ *
+ * Function: spimod_init_class()
+ * Purpose:  Initialises the class of the character device.
+ *
+ * Parameters:
+ *
+ * - IN:     N/A
+ * - OUT:    N/A
+ * - IN/OUT: N/A
+ *
+ * Returns:  0 on success, -1 on failure.
+ *
+ * Globals:
+ *
+ * - device_state._class (updated with the class handle).
+ * - device_state._devt (the device handle to use).
+ *
+ * ***************************************************************************/
+
 static int __init spimod_init_class(void)
 {
    device_state._class = class_create(THIS_MODULE, this_driver_name);
@@ -151,6 +247,38 @@ static int __init spimod_init_class(void)
 
    return 0;
 };
+
+/******************************************************************************
+ *
+ * Function: spimod_init()
+ * Purpose:  Module constructor - called once when the module is loaded (i.e.
+ *           with insmod).
+ *
+ *           Registered with module_init() - see below.
+ *
+ *           The character device, the device class and the SPI driver are
+ *           all initialised.  The outbound and inbound packets along with
+ *           the transmit and receive circular buffers are also created.
+ *
+ * Parameters:
+ *
+ * - IN:     N/A
+ * - OUT:    N/A
+ * - IN/OUT: N/A
+ *
+ * Returns:  0 on success, -1 on failure.
+ *
+ * Globals:
+ *
+ * - device_state (defaulted)
+ * - device_transaction (defaulted)
+ * - device_transaction._outPacket (created / defaulted)
+ * - device_transaction._inPacket (created / defaulted)
+ * - device_state._timer (initialised)
+ * - device_state._txBuffer (created)
+ * - device_state._rxBuffer (created)
+ *
+ * ***************************************************************************/
 
 static int __init spimod_init(void)
 {
@@ -209,7 +337,7 @@ static int __init spimod_init(void)
       goto fail_3;
    }
 
-   printk(KERN_ALERT "Module initialisation complete\n");
+   printk(KERN_ALERT "Module initialised\n");
 
    return 0;
 
@@ -224,6 +352,40 @@ fail_2:
 fail_1:
         return -1;
 }
+
+/******************************************************************************
+ *
+ * Function: spimod_exit()
+ * Purpose:  Module destructor - called once when the module is unloaded (i.e.
+ *           with rmmod).
+ *
+ *           Registered with module_exit() - see below.
+ *
+ *           The character device, the device class and the SPI driver are
+ *           all unregistered.  The outbound and inbound packets along with
+ *           the transmit and receive circular buffers are also destroyed.
+ *
+ * Parameters:
+ *
+ * - IN:     N/A
+ * - OUT:    N/A
+ * - IN/OUT: N/A
+ *
+ * Returns:  N/A
+ *
+ * Globals:
+ *
+ * - device_state._spi_device (unregistered)
+ * - spimod_driver (unregistered)
+ * - device_state._class (destroyed)
+ * - device_state._cdev (destroyed)
+ * - device_state._devt (unregistered)
+ * - device_state._txBuffer (destroyed)
+ * - device_state._rxBuffer (destroyed)
+ * - device_transaction._outPacket (destroyed)
+ * - device_transaction._inPacket (destroyed)
+ *
+ * ***************************************************************************/
 
 static void __exit spimod_exit(void)
 {
@@ -246,6 +408,8 @@ static void __exit spimod_exit(void)
 
    printk(KERN_ALERT "Module terminated\n");
 };
+
+/* Registers the module initialiser and termination functions */
 
 module_init(spimod_init);
 module_exit(spimod_exit);
