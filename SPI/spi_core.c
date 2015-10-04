@@ -1,7 +1,6 @@
 /******************************************************************************
  *
  * Linux SPI Device Driver
- * (c) 2014 Avalon Sciences Ltd
  *
  * Module Name: spi_core
  *
