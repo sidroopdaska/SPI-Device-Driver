@@ -1,8 +1,6 @@
 /******************************************************************************
  *
  * Linux SPI Device Driver
- * (c) 2014 Avalon Sciences Ltd
- *
  * Module Name: spi_fops
  *
  * Purpose:     A module containing file operations published by this driver.
